@@ -167,19 +167,29 @@ fn discover_system_installations() -> Vec<ClaudeInstallation> {
 /// Try using the 'which' command to find Claude
 fn try_which_command() -> Option<ClaudeInstallation> {
     debug!("Trying 'which claude' to find binary...");
-
-    match Command::new("which").arg("claude").output() {
+    
+    #[cfg(target_os = "windows")]
+    let command_name = "where";
+    #[cfg(not(target_os = "windows"))]
+    let command_name = "which";
+    
+    match Command::new(command_name).arg("claude").output() {
         Ok(output) if output.status.success() => {
             let output_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
-
             if output_str.is_empty() {
                 return None;
             }
-
-            // Parse aliased output: "claude: aliased to /path/to/claude"
-            let path = if output_str.starts_with("claude:") && output_str.contains("aliased to") {
-                output_str
-                    .split("aliased to")
+            
+            // Parse output based on OS
+            let path = if cfg!(target_os = "windows") {
+                // Windows 'where' returns multiple lines, prefer .cmd
+                output_str.lines()
+                    .find(|line| line.ends_with(".cmd"))
+                    .or_else(|| output_str.lines().next())
+                    .map(|s| s.to_string())
+            } else if output_str.starts_with("claude:") && output_str.contains("aliased to") {
+                // Unix alias format
+                output_str.split("aliased to")
                     .nth(1)
                     .map(|s| s.trim().to_string())
             } else {
